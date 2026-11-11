@@ -35,6 +35,18 @@ td.total{font-weight:bold;background:#f0fdf4;color:#b91c1c;font-size:17px}
 .small{color:#64748b;font-size:13px}
 .copyright{margin-top:10px;font-weight:bold;color:#0f172a;background:#e2e8f0;padding:10px;border-radius:6px;text-align:center}
 .hidden{display:none}
+.vn{margin-top:22px;border:2px solid #187447;border-radius:10px;padding:16px;background:#f7fdf9}
+.vn h2{margin:0 0 6px;font-size:19px;color:#14532d}
+.vn .field{margin:14px 0}
+.vn-cols{display:flex;flex-wrap:wrap;gap:8px}
+.vn-col{display:flex;align-items:center;gap:6px;border:1px solid #cbd5e1;border-radius:7px;padding:8px 10px;background:#fff}
+.vn-col.on{border-color:#16834a;background:#dcfce7}
+.vn-col b{min-width:58px}
+.vn input[type=checkbox],.vn input[type=radio]{width:18px;height:18px;vertical-align:middle}
+.inline{display:block;font-weight:normal;margin:4px 0}
+#vn-report{margin-top:12px}
+#vn-report table{min-width:0;font-size:14px}
+#vn-report td,#vn-report th{padding:5px 8px}
 .loading{padding:30px;text-align:center;color:#64748b}
 @media(max-width:768px){
   .wrap{margin:0 auto;padding:0 4px}
@@ -81,6 +93,20 @@ td.total{font-weight:bold;background:#f0fdf4;color:#b91c1c;font-size:17px}
         </table>
       </div>
       <div class="actions" style="margin-top:16px"><span id="status"></span></div>
+
+      <div class="vn">
+        <h2>XUẤT FILE NỘP vnEdu</h2>
+        <p class="small">File được xử lý ngay trên máy của thầy cô, không gửi đi đâu. File gốc không bị sửa, phần mềm tải về một file mới.</p>
+        <div class="field"><label for="vn-file">1. Chọn file sổ điểm tải từ vnEdu (.xlsx)</label>
+          <input id="vn-file" type="file" accept=".xlsx"></div>
+        <div class="field"><label>2. Tích vào cột muốn điền điểm Tổng (cột không tích giữ nguyên)</label>
+          <div id="vn-cols" class="vn-cols"></div></div>
+        <div class="field"><label>3. Phạm vi</label>
+          <label class="inline"><input type="radio" name="vn-scope" value="all" checked> Tất cả các lớp có trong file</label>
+          <label class="inline"><input type="radio" name="vn-scope" value="one"> Chỉ lớp đang chọn (<span class="cur"></span>)</label></div>
+        <button class="btn excel" id="vn-run" type="button">TẠO FILE vnEdu</button>
+        <div id="vn-report"></div>
+      </div>
     </div>
 
     <div id="boot" class="loading">Đang tải...</div>
@@ -90,6 +116,7 @@ td.total{font-weight:bold;background:#f0fdf4;color:#b91c1c;font-size:17px}
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 var SUBJECTS = ['ly', 'hoa', 'sinh'];
 var MAX = { ly: 5, hoa: 2.5, sinh: 2.5 };
@@ -346,6 +373,211 @@ $('export').addEventListener('click', function () {
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Diem KHTN ' + lop);
   XLSX.writeFile(wb, 'Bang_diem_KHTN_' + lop.toLowerCase() + '.xlsx');
+});
+
+// ===== XUAT FILE NOP vnEdu =====
+// Mo file so diem tai tu vnEdu, chi ghi diem vao cac cot duoc tich, giu nguyen moi thu khac.
+var VN_COLS = [
+  { key: 'TX1', label: 'TX1' }, { key: 'TX2', label: 'TX2' }, { key: 'TX3', label: 'TX3' },
+  { key: 'TX4', label: 'TX4' }, { key: 'GK', label: 'ĐĐGgk' }, { key: 'CK', label: 'ĐĐGck' }
+];
+// File gom 3 phan mon nen chi dien 1 diem: Tong (Ly + Hoa + Sinh)
+$('vn-cols').innerHTML = VN_COLS.map(function (c) {
+  var on = c.key === 'GK';   // mac dinh: diem giua ky I
+  return '<label class="vn-col' + (on ? ' on' : '') + '" data-key="' + c.key + '"><input type="checkbox" class="vn-check"' + (on ? ' checked' : '') +
+    '> <b>' + c.label + '</b></label>';
+}).join('');
+$('vn-cols').addEventListener('change', function (e) {
+  var box = e.target.closest('.vn-col');
+  if (box) box.classList.toggle('on', box.querySelector('.vn-check').checked);
+});
+
+function vnNorm(s) { return String(s || '').replace(/\s+/g, '').toUpperCase(); }
+function vnMa(s) {
+  // Ma HS trong file vnEdu co the luu dang so 2.401128862E9 -> doi ve 2401128862
+  s = String(s === null || s === undefined ? '' : s).trim();
+  if (/^\d+(\.\d+)?E\+?\d+$/i.test(s) || /^\d+\.0+$/.test(s)) {
+    var n = Number(s);
+    if (isFinite(n) && Math.floor(n) === n) return String(n);
+  }
+  return s;
+}
+function colNum(ref) { var m = /^([A-Z]+)/i.exec(ref), n = 0; (m ? m[1].toUpperCase() : 'A').split('').forEach(function (c) { n = n * 26 + c.charCodeAt(0) - 64; }); return n; }
+function colName(n) { var s = ''; while (n > 0) { var r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); } return s; }
+function kids(el, name) { return Array.prototype.filter.call(el.childNodes, function (n) { return n.nodeType === 1 && n.localName === name; }); }
+function attrLocal(el, local) {
+  for (var i = 0; i < el.attributes.length; i++) if (el.attributes[i].localName === local && el.attributes[i].prefix === 'r') return el.attributes[i].value;
+  return el.getAttribute('r:' + local);
+}
+function parseXml(text) {
+  var doc = new DOMParser().parseFromString(text, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length) throw new Error('File Excel bị lỗi cấu trúc.');
+  return doc;
+}
+
+function cellText(c, shared) {
+  var t = c.getAttribute('t');
+  if (t === 'inlineStr') return Array.prototype.map.call(c.getElementsByTagNameNS('*', 't'), function (x) { return x.textContent; }).join('');
+  var v = kids(c, 'v')[0];
+  if (!v) return '';
+  return t === 's' ? (shared[+v.textContent] || '') : v.textContent;
+}
+
+function setCellNumber(doc, rowEl, rowNum, col, value) {
+  var ns = doc.documentElement.namespaceURI, ref = colName(col) + rowNum;
+  var cells = kids(rowEl, 'c'), c = null, before = null;
+  for (var i = 0; i < cells.length; i++) {
+    var n = colNum(cells[i].getAttribute('r'));
+    if (n === col) { c = cells[i]; break; }
+    if (n > col) { before = cells[i]; break; }
+  }
+  if (!c) { c = doc.createElementNS(ns, 'c'); c.setAttribute('r', ref); rowEl.insertBefore(c, before); }
+  var old = cellText(c, []);
+  c.removeAttribute('t');
+  while (c.firstChild) c.removeChild(c.firstChild);
+  var v = doc.createElementNS(ns, 'v'); v.textContent = String(value); c.appendChild(v);
+  return old;
+}
+
+function vnFindColumns(rows, shared) {
+  var found = {}, maCol = 0, headerRow = 0;
+  rows.slice(0, 15).forEach(function (rowEl) {
+    var r = +rowEl.getAttribute('r');
+    kids(rowEl, 'c').forEach(function (c) {
+      var t = vnNorm(cellText(c, shared)), col = colNum(c.getAttribute('r')), key = null;
+      if (/^TX[1-4]$/.test(t)) key = t;
+      else if (/^ĐĐGGK|GIỮAKỲ/.test(t)) key = 'GK';
+      else if (/^ĐĐGCK|CUỐIKỲ/.test(t)) key = 'CK';
+      else if (t === 'MÃHỌCSINH' || t === 'MÃHS') maCol = col;
+      if (key && !found[key]) { found[key] = col; headerRow = Math.max(headerRow, r); }
+      if (t === 'MÃHỌCSINH' || t === 'MÃHS') headerRow = Math.max(headerRow, r);
+    });
+  });
+  return { cols: found, maCol: maCol || 2, firstRow: headerRow + 1 };
+}
+
+function vnBuild(buf, chosen, onlyClass, scores) {
+  return JSZip.loadAsync(buf).then(function (zip) {
+    var need = ['xl/workbook.xml', 'xl/_rels/workbook.xml.rels'];
+    if (!zip.file(need[0]) || !zip.file(need[1])) throw new Error('Đây không phải file Excel (.xlsx) hợp lệ.');
+    var ssFile = zip.file('xl/sharedStrings.xml');
+    return Promise.all([zip.file(need[0]).async('string'), zip.file(need[1]).async('string'), ssFile ? ssFile.async('string') : '']).then(function (t) {
+      var wb = parseXml(t[0]), rels = parseXml(t[1]), shared = [];
+      if (t[2]) Array.prototype.forEach.call(parseXml(t[2]).getElementsByTagNameNS('*', 'si'), function (si) {
+        shared.push(Array.prototype.map.call(si.getElementsByTagNameNS('*', 't'), function (x) { return x.textContent; }).join(''));
+      });
+      var targets = {};
+      Array.prototype.forEach.call(rels.getElementsByTagNameNS('*', 'Relationship'), function (r) { targets[r.getAttribute('Id')] = r.getAttribute('Target'); });
+      var jobs = [];
+      Array.prototype.forEach.call(wb.getElementsByTagNameNS('*', 'sheet'), function (sh) {
+        var m = /(8a[1-7]|9a[1-6])\s*$/i.exec(sh.getAttribute('name') || '');
+        if (!m) return;
+        var lop = m[1].toUpperCase();
+        if (onlyClass && lop !== onlyClass) return;
+        var target = targets[attrLocal(sh, 'id')];
+        if (!target) return;
+        var path = target.charAt(0) === '/' ? target.slice(1) : 'xl/' + target.replace(/^\.\//, '');
+        if (zip.file(path)) jobs.push({ lop: lop, path: path });
+      });
+      if (!jobs.length) throw new Error('Không tìm thấy trang tính lớp nào (8A1...9A6) trong file này.');
+      var report = [];
+      return Promise.all(jobs.map(function (job) {
+        return zip.file(job.path).async('string').then(function (xml) {
+          var doc = parseXml(xml), rep = { lop: job.lop, filled: 0, missing: 0, notFound: 0, overwritten: 0, noCol: [] };
+          var rows = Array.prototype.slice.call(doc.getElementsByTagNameNS('*', 'row'));
+          var info = vnFindColumns(rows, shared), sc = scores[job.lop] || {};
+          chosen.forEach(function (ch) { if (!info.cols[ch.key]) rep.noCol.push(ch.label); });
+          rows.forEach(function (rowEl) {
+            var r = +rowEl.getAttribute('r');
+            if (r < info.firstRow) return;
+            var maCell = kids(rowEl, 'c').filter(function (c) { return colNum(c.getAttribute('r')) === info.maCol; })[0];
+            var ma = maCell ? vnMa(cellText(maCell, shared)) : '';
+            if (!ma) return;
+            var st = sc[ma];
+            if (!st) { rep.notFound++; return; }
+            var wrote = false, miss = false;
+            chosen.forEach(function (ch) {
+              var col = info.cols[ch.key];
+              if (!col) return;
+              var v = st[ch.src];
+              if (v === '' || v === null || v === undefined) { miss = true; return; }
+              if (setCellNumber(doc, rowEl, r, col, v) !== '') rep.overwritten++;
+              wrote = true;
+            });
+            if (wrote) rep.filled++;
+            if (miss) rep.missing++;
+          });
+          zip.file(job.path, new XMLSerializer().serializeToString(doc));
+          report.push(rep);
+        });
+      })).then(function () {
+        // Bao Excel tinh lai cong thuc (cot DTB) khi mo file
+        var calc = wb.getElementsByTagNameNS('*', 'calcPr')[0];
+        if (calc) { calc.setAttribute('fullCalcOnLoad', '1'); zip.file(need[0], new XMLSerializer().serializeToString(wb)); }
+        report.sort(function (a, b) { return a.lop < b.lop ? -1 : 1; });
+        return zip.generateAsync({ type: 'blob', compression: 'DEFLATE',
+          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }).then(function (blob) {
+          return { blob: blob, report: report };
+        });
+      });
+    });
+  });
+}
+
+function vnReport(rep, chosen) {
+  var html = '<div class="alert ok">Đã tạo file. Điểm Tổng (Lý + Hóa + Sinh) được điền vào cột: ' +
+    esc(chosen.map(function (c) { return c.label; }).join(', ')) + '</div>';
+  html += '<div class="table-wrap"><table><thead><tr><th>Lớp</th><th>Số em đã điền</th><th>Thiếu điểm (để trống)</th><th>Không có trong Google Sheet</th><th>Ghi đè ô đã có điểm</th></tr></thead><tbody>';
+  rep.forEach(function (r) {
+    html += '<tr><td>' + esc(r.lop) + '</td><td>' + r.filled + '</td><td>' + r.missing + '</td><td>' + r.notFound + '</td><td>' + r.overwritten +
+      (r.noCol.length ? '<br><span class="small">Không thấy cột: ' + esc(r.noCol.join(', ')) + '</span>' : '') + '</td></tr>';
+  });
+  return html + '</tbody></table></div><p class="small">Mở file vừa tải về kiểm tra lại trước khi tải lên vnEdu.</p>';
+}
+
+function downloadBlob(blob, name) {
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+}
+
+$('vn-run').addEventListener('click', function () {
+  var btn = this, out = $('vn-report');
+  var file = $('vn-file').files[0];
+  var chosen = Array.prototype.filter.call(document.querySelectorAll('.vn-col'), function (b) { return b.querySelector('.vn-check').checked; })
+    .map(function (b) {
+      var key = b.dataset.key;
+      return { key: key, label: VN_COLS.filter(function (c) { return c.key === key; })[0].label, src: 'total' };
+    });
+  if (!file) { out.innerHTML = '<div class="alert err">Chưa chọn file sổ điểm tải từ vnEdu.</div>'; return; }
+  if (!chosen.length) { out.innerHTML = '<div class="alert err">Chưa tích cột nào để điền điểm.</div>'; return; }
+  if (typeof JSZip === 'undefined') { out.innerHTML = '<div class="alert err">Chưa tải được thư viện, vui lòng tải lại trang.</div>'; return; }
+  var only = document.querySelector('input[name="vn-scope"]:checked').value === 'one' ? state.lop : '';
+  var lops = only ? [only] : state.classes.map(function (c) { return c.code; });
+  btn.disabled = true;
+  var scores = {}, i = 0;
+  function next() {
+    if (i >= lops.length) return Promise.resolve();
+    var lop = lops[i++];
+    out.innerHTML = '<div class="note">Đang lấy điểm lớp ' + esc(lop) + ' (' + i + '/' + lops.length + ')...</div>';
+    return call('getClass', lop, state.pass).then(function (rows) {
+      scores[lop] = {};
+      rows.forEach(function (s) { scores[lop][vnMa(s.ma)] = s; });
+      return next();
+    });
+  }
+  next().then(function () {
+    out.innerHTML = '<div class="note">Đang điền điểm vào file...</div>';
+    return file.arrayBuffer();
+  }).then(function (buf) {
+    return vnBuild(buf, chosen, only, scores);
+  }).then(function (res) {
+    downloadBlob(res.blob, file.name.replace(/\.xlsx$/i, '') + '_vnEdu.xlsx');
+    out.innerHTML = vnReport(res.report, chosen);
+  }).catch(function (e) {
+    out.innerHTML = '<div class="alert err">' + esc(e.message) + '</div>';
+  }).then(function () { btn.disabled = false; });
 });
 </script>
 </body>
