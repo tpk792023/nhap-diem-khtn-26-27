@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PK79 - Nhập điểm KHTN</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f1f5f9;color:#172033;font:16px Arial,sans-serif}
+.wrap{max-width:1250px;margin:24px auto;padding:0 14px}
+.head{background:linear-gradient(135deg,#0f172a,#1d4ed8);color:#fff;padding:22px;border-radius:12px 12px 0 0;text-align:center}
+.head h1{margin:0 0 8px;font-size:24px;color:#facc15;text-shadow:1px 1px 3px rgba(0,0,0,.5);text-transform:uppercase}
+.head p{margin:0;color:#e0f2fe;font-size:16px}
+.panel{background:#fff;padding:20px;border-radius:0 0 12px 12px;box-shadow:0 4px 18px #0001}
+.toolbar,.actions{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:16px}
+.field label{display:block;font-weight:bold;margin-bottom:7px}
+select,.pass{padding:11px;border:1px solid #cbd5e1;border-radius:7px;font-size:16px}
+.btn{display:inline-block;padding:11px 16px;border:0;border-radius:7px;background:#1769aa;color:#fff;font-weight:bold;cursor:pointer;font-size:15px}
+.excel{background:#187447}
+.btn:disabled{opacity:.6;cursor:wait}
+.alert{padding:12px;border-radius:7px;margin:12px 0}.ok{background:#dcfce7;color:#166534}.err{background:#fee2e2;color:#991b1b}
+.note{background:#eff6ff;color:#1e40af;padding:12px;border-radius:7px;margin:12px 0}
+.table-wrap{overflow:auto;border:1px solid #cbd5e1;border-radius:8px}
+table{width:100%;min-width:900px;border-collapse:collapse}
+th,td{border:1px solid #94a3b8;padding:9px 8px;text-align:center;transition:background-color .5s ease}
+th{background:#e2e8f0}
+td.name{text-align:left;min-width:220px}
+td input{width:78px;padding:8px 4px;border:1px solid #cbd5e1;border-radius:5px;text-align:center;font-size:16px;outline:none;transition:background-color .5s ease}
+td input:focus{border-color:#1d4ed8;box-shadow:0 0 0 2px #bfdbfe}
+td input.bad{border-color:#991b1b;background:#fee2e2}
+td input.saving{background:#fef9c3}
+td.total{font-weight:bold;background:#f0fdf4;color:#b91c1c;font-size:17px}
+#status{font-weight:bold;font-size:15px;min-height:20px}
+.small{color:#64748b;font-size:13px}
+.copyright{margin-top:10px;font-weight:bold;color:#0f172a;background:#e2e8f0;padding:10px;border-radius:6px;text-align:center}
+.hidden{display:none}
+.loading{padding:30px;text-align:center;color:#64748b}
+@media(max-width:768px){
+  .wrap{margin:0 auto;padding:0 4px}
+  .panel{padding:8px 4px}
+  .head{padding:12px}
+  .head h1{font-size:18px}
+  table{min-width:100%;font-size:12px}
+  th,td{padding:4px 1px}
+  th{font-size:10px}
+  td.name{min-width:90px;font-size:13px;white-space:normal;word-break:break-word;line-height:1.2}
+  td input{width:34px;padding:6px 0;font-size:13px;border-radius:3px}
+  td.total{font-size:13px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <h1>PK79 - PHẦN MỀM NHẬP ĐIỂM KHTN</h1>
+    <p>Trường Tiểu học và THCS Đa Phước | Lý 5đ - Hóa 2,5đ - Sinh 2,5đ</p>
+  </div>
+  <div class="panel">
+    <div id="msg"></div>
+
+    <div id="login" class="hidden">
+      <form id="login-form" class="toolbar">
+        <div class="field"><label for="pass">Mật khẩu</label><input id="pass" class="pass" type="password" autocomplete="current-password"></div>
+        <button class="btn" type="submit">Vào nhập điểm</button>
+      </form>
+    </div>
+
+    <div id="app" class="hidden">
+      <div class="toolbar">
+        <div class="field"><label for="lop">Chọn lớp</label><select id="lop"></select></div>
+        <button class="btn excel" id="export" type="button">Tải Excel lớp <span class="cur"></span></button>
+      </div>
+      <div class="note"><b>Thang điểm:</b> Lý tối đa 5; Hóa tối đa 2,5; Sinh tối đa 2,5. Điểm tổng tự động tính và làm tròn.
+        <b>Tự động lưu</b> từng ô vào Google Sheet. Điểm do giáo viên khác nhập sẽ hiện ra sau vài giây (nháy sáng màu xanh).</div>
+      <p><b>Lớp <span class="cur"></span>:</b> <span id="count">0</span> học sinh</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>STT</th><th>Họ và tên</th><th>Vật lý (5đ)</th><th>Hóa học (2,5đ)</th><th>Sinh học (2,5đ)</th><th>Tổng (10đ)</th></tr></thead>
+          <tbody id="rows"><tr><td colspan="6" class="loading">Đang tải danh sách...</td></tr></tbody>
+        </table>
+      </div>
+      <div class="actions" style="margin-top:16px"><span id="status"></span></div>
+    </div>
+
+    <div id="boot" class="loading">Đang tải...</div>
+    <p class="small">Điểm được lưu trực tiếp vào Google Sheet của thầy.</p>
+    <div class="copyright">Bản quyền: Thầy Tống Phước Khải-GV-Trường TH&amp;THCS Đa Phước-Vĩnh Hậu-AnGiang</div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+var SUBJECTS = ['ly', 'hoa', 'sinh'];
+var MAX = { ly: 5, hoa: 2.5, sinh: 2.5 };
+var state = { pass: '', lop: '', rows: [], classes: [] };
+var timers = {};      // cho luu theo tung o
+var inflight = {};    // o dang gui len server
+var recent = {};      // o vua luu xong (tranh ban dong bo cu ghi de)
+var pollTimer = null;
+
+function $(id) { return document.getElementById(id); }
+function store(k, v) { try { if (v === undefined) return sessionStorage.getItem(k); sessionStorage.setItem(k, v); } catch (e) { return null; } }
+
+// ===== LINK APPS SCRIPT =====
+// Khi dat trang nay tren GitHub Pages: dan link "URL ung dung web" (.../exec) vao day.
+// Khi chay ngay trong Apps Script thi khong can (de nguyen cung duoc).
+var API_URL = 'https://script.google.com/macros/s/AKfycbwmpi5kLpplkrl3XD3i2Tw_cxfpc7JPQUbybYcoWkxagzmaxBSVdlT3DazHZEprR9cx/exec';
+
+var IN_APPS_SCRIPT = typeof google !== 'undefined' && google.script && google.script.run;
+
+function call(fn) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  if (!IN_APPS_SCRIPT) {
+    if (API_URL.indexOf('DAN_MA_TRIEN_KHAI') >= 0) {
+      return Promise.reject(new Error('Chưa dán link Apps Script (.../exec) vào biến API_URL trong index.html.'));
+    }
+    // text/plain de trinh duyet khong gui yeu cau kiem tra CORS (Apps Script khong ho tro)
+    return fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ fn: fn, args: args })
+    }).then(function (res) {
+      if (!res.ok) throw new Error('Không kết nối được Google (mã ' + res.status + ').');
+      return res.json();
+    }, function () {
+      throw new Error('Không kết nối được Google. Kiểm tra mạng hoặc link API_URL.');
+    }).then(function (data) {
+      if (!data || !data.ok) throw new Error((data && data.error) || 'Lỗi không rõ từ Google.');
+      return data.result;
+    });
+  }
+  return new Promise(function (resolve, reject) {
+    var r = google.script.run.withSuccessHandler(resolve).withFailureHandler(function (e) {
+      reject(new Error((e && e.message) ? e.message : String(e)));
+    });
+    r[fn].apply(r, args);
+  });
+}
+
+function fmt(v) { return (v === '' || v === null || v === undefined) ? '' : String(v).replace('.', ','); }
+function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+
+function showMsg(text, ok) {
+  $('msg').innerHTML = text ? '<div class="alert ' + (ok ? 'ok' : 'err') + '">' + esc(text) + '</div>' : '';
+}
+function setStatus(text, color) { var s = $('status'); s.textContent = text; s.style.color = color || '#1e40af'; }
+
+// ===== KHOI DONG =====
+call('getInit').then(function (init) {
+  $('boot').classList.add('hidden');
+  state.classes = init.classes;
+  if (!init.classes.length) { showMsg('Không tìm thấy trang tính lớp nào (8A1...9A6) trong Google Sheet.'); return; }
+  $('lop').innerHTML = init.classes.map(function (c) {
+    return '<option value="' + esc(c.code) + '">Lớp ' + esc(c.code) + ' (' + c.count + ' học sinh)</option>';
+  }).join('');
+  var saved = store('pk79_lop');
+  if (saved && init.classes.some(function (c) { return c.code === saved; })) $('lop').value = saved;
+  if (init.needPassword) {
+    state.pass = store('pk79_pass') || '';
+    if (state.pass) return call('login', state.pass).then(startApp, function () { state.pass = ''; showLogin(); });
+    showLogin();
+  } else {
+    startApp();
+  }
+}).catch(function (e) { $('boot').classList.add('hidden'); showMsg(e.message); });
+
+function showLogin() { $('login').classList.remove('hidden'); $('pass').focus(); }
+
+$('login-form').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var p = $('pass').value;
+  call('login', p).then(function () {
+    state.pass = p; store('pk79_pass', p); showMsg('');
+    $('login').classList.add('hidden'); startApp();
+  }).catch(function (err) { showMsg(err.message); });
+});
+
+function startApp() {
+  $('app').classList.remove('hidden');
+  loadClass($('lop').value);
+}
+
+$('lop').addEventListener('change', function () { loadClass(this.value); });
+
+// ===== TAI LOP =====
+function loadClass(lop) {
+  state.lop = lop; store('pk79_lop', lop);
+  Array.prototype.forEach.call(document.querySelectorAll('.cur'), function (el) { el.textContent = lop; });
+  $('rows').innerHTML = '<tr><td colspan="6" class="loading">Đang tải lớp ' + esc(lop) + '...</td></tr>';
+  clearInterval(pollTimer);
+  call('getClass', lop, state.pass).then(function (rows) {
+    if (state.lop !== lop) return;
+    state.rows = rows;
+    render();
+    pollTimer = setInterval(poll, 4000);
+  }).catch(function (e) { showMsg(e.message); });
+}
+
+function render() {
+  $('count').textContent = state.rows.length;
+  $('rows').innerHTML = state.rows.map(function (s, i) {
+    var cells = SUBJECTS.map(function (subj) {
+      return '<td><input type="text" class="score-input" inputmode="decimal" data-subj="' + subj + '" data-max="' + MAX[subj] +
+             '" value="' + esc(fmt(s[subj])) + '"></td>';
+    }).join('');
+    return '<tr data-ma="' + esc(s.ma) + '"><td>' + (i + 1) + '</td><td class="name">' + esc(s.name) + '</td>' + cells +
+           '<td class="total">' + (s.total === '' ? '—' : fmt(s.total)) + '</td></tr>';
+  }).join('');
+}
+
+function calcRow(row) {
+  var v = Array.prototype.map.call(row.querySelectorAll('input.score-input'), function (x) { return x.value.trim().replace(',', '.'); });
+  var t = row.querySelector('.total');
+  if (v.every(function (x) { return x !== '' && !isNaN(Number(x)); })) {
+    var sum = v.reduce(function (a, x) { return a + Number(x); }, 0);
+    t.textContent = fmt(Math.round(sum * 10) / 10);
+  } else t.textContent = '—';
+}
+
+function isValid(inp) {
+  var raw = inp.value.trim().replace(',', '.');
+  if (raw === '') return true;
+  var n = Number(raw);
+  return /^\d+(\.\d+)?$/.test(raw) && n >= 0 && n <= Number(inp.dataset.max);
+}
+
+// ===== LUU TUNG O =====
+function cellKey(inp) { return inp.closest('tr').dataset.ma + '|' + inp.dataset.subj; }
+
+function scheduleSave(inp) {
+  var key = cellKey(inp);
+  clearTimeout(timers[key]);
+  timers[key] = setTimeout(function () { delete timers[key]; saveCell(inp); }, 700);
+}
+
+function saveCell(inp) {
+  if (!isValid(inp)) return;
+  var row = inp.closest('tr'), key = cellKey(inp), lop = state.lop, value = inp.value.trim();
+  inflight[key] = (inflight[key] || 0) + 1;
+  inp.classList.add('saving');
+  setStatus('Đang lưu...');
+  call('saveScore', lop, row.dataset.ma, inp.dataset.subj, value, state.pass).then(function (res) {
+    var s = findRow(res.ma);
+    if (s && lop === state.lop) { s.ly = res.ly; s.hoa = res.hoa; s.sinh = res.sinh; s.total = res.total; }
+    setStatus('Đã tự động lưu', '#166534');
+    setTimeout(function () { if ($('status').textContent === 'Đã tự động lưu') setStatus(''); }, 2000);
+  }).catch(function (e) {
+    inp.classList.add('bad');
+    setStatus('Lỗi khi lưu: ' + e.message, '#991b1b');
+  }).then(function () {
+    recent[key] = Date.now();
+    inflight[key]--; if (!inflight[key]) { delete inflight[key]; inp.classList.remove('saving'); }
+  });
+}
+
+function findRow(ma) {
+  for (var i = 0; i < state.rows.length; i++) if (state.rows[i].ma === ma) return state.rows[i];
+  return null;
+}
+
+document.addEventListener('input', function (e) {
+  var inp = e.target;
+  if (!inp.classList || !inp.classList.contains('score-input')) return;
+  var val = inp.value.replace(',', '.');
+  if (val.length === 2 && val.indexOf('.') < 0) inp.value = val[0] + '.' + val[1];   // go 45 -> 4.5
+  inp.value = inp.value.replace(/[^0-9.,]/g, '');
+  inp.classList.toggle('bad', !isValid(inp));
+  calcRow(inp.closest('tr'));
+  scheduleSave(inp);
+});
+
+document.addEventListener('change', function (e) {
+  var inp = e.target;
+  if (!inp.classList || !inp.classList.contains('score-input')) return;
+  if (!isValid(inp)) {
+    alert('Điểm tối đa của môn này là ' + fmt(inp.dataset.max));
+    inp.value = ''; inp.classList.remove('bad');
+    calcRow(inp.closest('tr')); scheduleSave(inp);
+  }
+});
+
+// ===== PHIM MUI TEN NHU EXCEL =====
+document.addEventListener('keydown', function (e) {
+  var inp = e.target;
+  if (!inp.classList || !inp.classList.contains('score-input')) return;
+  var keys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'];
+  if (keys.indexOf(e.key) < 0) return;
+  e.preventDefault();
+  var td = inp.closest('td'), tr = td.parentNode, trs = Array.prototype.slice.call(tr.parentNode.children);
+  var col = Array.prototype.indexOf.call(tr.children, td), r = trs.indexOf(tr);
+  var rowInputs = Array.prototype.slice.call(tr.querySelectorAll('input.score-input')), ci = rowInputs.indexOf(inp);
+  var target = null;
+  if ((e.key === 'ArrowUp') && r > 0) target = trs[r - 1].children[col].querySelector('input');
+  else if ((e.key === 'ArrowDown' || e.key === 'Enter') && r < trs.length - 1) target = trs[r + 1].children[col].querySelector('input');
+  else if (e.key === 'ArrowLeft' && ci > 0) target = rowInputs[ci - 1];
+  else if (e.key === 'ArrowRight' && ci < rowInputs.length - 1) target = rowInputs[ci + 1];
+  if (target) { target.focus(); setTimeout(function () { target.select(); }, 0); }
+});
+
+// ===== DONG BO DIEM TU GIAO VIEN KHAC =====
+var polling = false;
+function poll() {
+  if (polling || document.hidden) return;
+  polling = true;
+  var lop = state.lop;
+  call('getClass', lop, state.pass).then(function (rows) {
+    if (lop !== state.lop) return;
+    rows.forEach(function (s) {
+      var tr = document.querySelector('tr[data-ma="' + CSS.escape(s.ma) + '"]');
+      if (!tr) return;
+      var changed = false;
+      SUBJECTS.forEach(function (subj) {
+        var inp = tr.querySelector('input[data-subj="' + subj + '"]');
+        var key = s.ma + '|' + subj;
+        if (!inp || inp === document.activeElement || timers[key] || inflight[key]) return;
+        if (recent[key] && Date.now() - recent[key] < 8000) return;
+        if (inp.value.replace(',', '.') !== String(s[subj])) {
+          inp.value = fmt(s[subj]); inp.classList.remove('bad');
+          inp.style.backgroundColor = '#dcfce7';
+          setTimeout(function () { inp.style.backgroundColor = ''; }, 1500);
+          changed = true;
+        }
+      });
+      var cur = findRow(s.ma);
+      if (cur) { cur.ly = s.ly; cur.hoa = s.hoa; cur.sinh = s.sinh; cur.total = s.total; }
+      if (changed) calcRow(tr);
+    });
+  }).catch(function () { /* mang chap chon: thu lai lan sau */ }).then(function () { polling = false; });
+}
+
+// ===== XUAT EXCEL =====
+$('export').addEventListener('click', function () {
+  if (typeof XLSX === 'undefined') { showMsg('Chưa tải được thư viện Excel, vui lòng tải lại trang.'); return; }
+  var lop = state.lop;
+  var aoa = [
+    ['TRƯỜNG TIỂU HỌC VÀ THCS ĐA PHƯỚC'],
+    ['BẢNG ĐIỂM MÔN KHOA HỌC TỰ NHIÊN - LỚP ' + lop],
+    [],
+    ['STT', 'Họ và tên', 'Vật lý (5đ)', 'Hóa học (2,5đ)', 'Sinh học (2,5đ)', 'Tổng (10đ)']
+  ];
+  state.rows.forEach(function (s, i) { aoa.push([i + 1, s.name, s.ly, s.hoa, s.sinh, s.total]); });
+  var ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 6 }, { wch: 32 }, { wch: 13 }, { wch: 14 }, { wch: 14 }, { wch: 11 }];
+  ws['!autofilter'] = { ref: 'A4:F' + (aoa.length) };
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Diem KHTN ' + lop);
+  XLSX.writeFile(wb, 'Bang_diem_KHTN_' + lop.toLowerCase() + '.xlsx');
+});
+</script>
+</body>
+</html>
