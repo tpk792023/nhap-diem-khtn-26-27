@@ -35,6 +35,23 @@ td.total{font-weight:bold;background:#f0fdf4;color:#b91c1c;font-size:17px}
 .small{color:#64748b;font-size:13px}
 .copyright{margin-top:10px;font-weight:bold;color:#0f172a;background:#e2e8f0;padding:10px;border-radius:6px;text-align:center}
 .hidden{display:none}
+.tk{margin-top:22px;border:2px solid #1d4ed8;border-radius:10px;padding:16px;background:#f8fafc}
+.tk h2{margin:0 0 6px;font-size:19px;color:#1e3a8a}
+.tk-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0}
+.tk-tile{background:#fff;border:1px solid #cbd5e1;border-radius:9px;padding:12px}
+.tk-tile .k{font-size:13px;color:#52514e}
+.tk-tile .v{font-size:28px;font-weight:bold;color:#0b0b0b;margin-top:2px}
+.tk-tile .s{font-size:13px;color:#52514e}
+.tk-tile .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.tk-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:14px;color:#0b0b0b;margin:6px 0}
+.tk-legend span{display:inline-flex;align-items:center;gap:6px}
+.tk-legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.tk-chart{background:#fcfcfb;border:1px solid #e2e8f0;border-radius:9px;padding:10px;position:relative}
+.tk-chart svg{width:100%;height:auto;display:block}
+.tk-tip{position:absolute;pointer-events:none;background:#0b0b0b;color:#fff;font-size:13px;padding:7px 9px;border-radius:6px;white-space:nowrap;display:none;z-index:5}
+#tk-out table{min-width:0;font-size:14px;margin-top:12px}
+#tk-out td,#tk-out th{padding:6px 8px}
+#tk-out tr.sum td{font-weight:bold;background:#e2e8f0}
 .vn{margin-top:22px;border:2px solid #187447;border-radius:10px;padding:16px;background:#f7fdf9}
 .vn h2{margin:0 0 6px;font-size:19px;color:#14532d}
 .vn .field{margin:14px 0}
@@ -80,13 +97,14 @@ td.total{font-weight:bold;background:#f0fdf4;color:#b91c1c;font-size:17px}
 
     <div id="app" class="hidden">
       <div class="toolbar">
+        <div class="field"><label for="hk">Học kỳ</label><select id="hk"></select></div>
         <div class="field"><label for="lop">Chọn lớp</label><select id="lop"></select></div>
         <button class="btn excel" id="export" type="button">Tải Excel lớp <span class="cur"></span></button>
         <button class="btn excel" id="export-all" type="button">Tải Excel tất cả lớp</button>
       </div>
       <div class="note"><b>Thang điểm:</b> Lý tối đa 5; Hóa tối đa 2,5; Sinh tối đa 2,5. Điểm tổng tự động tính và làm tròn.
         <b>Tự động lưu</b> từng ô vào Google Sheet. Điểm do giáo viên khác nhập sẽ hiện ra sau vài giây (nháy sáng màu xanh).</div>
-      <p><b>Lớp <span class="cur"></span>:</b> <span id="count">0</span> học sinh</p>
+      <p><b>Lớp <span class="cur"></span> - <span class="hk-label"></span>:</b> <span id="count">0</span> học sinh</p>
       <div class="table-wrap">
         <table>
           <thead><tr><th>STT</th><th>Họ và tên</th><th>Vật lý (5đ)</th><th>Hóa học (2,5đ)</th><th>Sinh học (2,5đ)</th><th>Tổng (10đ)</th></tr></thead>
@@ -95,8 +113,16 @@ td.total{font-weight:bold;background:#f0fdf4;color:#b91c1c;font-size:17px}
       </div>
       <div class="actions" style="margin-top:16px"><span id="status"></span></div>
 
+      <div class="tk">
+        <h2>THỐNG KÊ ĐIỂM TỔNG - <span class="hk-label"></span></h2>
+        <p class="small">Chỉ tính học sinh đã đủ 3 điểm Lý, Hóa, Sinh. Bấm nút để lấy số liệu mới nhất (chỉ xem, không sửa điểm).</p>
+        <button class="btn" id="tk-run" type="button">XEM THỐNG KÊ</button>
+        <button class="btn excel hidden" id="tk-excel" type="button">Tải Excel thống kê</button>
+        <div id="tk-out"></div>
+      </div>
+
       <div class="vn">
-        <h2>XUẤT FILE NỘP vnEdu</h2>
+        <h2>XUẤT FILE NỘP vnEdu - <span class="hk-label"></span></h2>
         <p class="small">File được xử lý ngay trên máy của thầy cô, không gửi đi đâu. File gốc không bị sửa, phần mềm tải về một file mới.</p>
         <div class="field"><label for="vn-file">1. Chọn file sổ điểm tải từ vnEdu (.xlsx)</label>
           <input id="vn-file" type="file" accept=".xlsx"></div>
@@ -121,7 +147,7 @@ td.total{font-weight:bold;background:#f0fdf4;color:#b91c1c;font-size:17px}
 <script>
 var SUBJECTS = ['ly', 'hoa', 'sinh'];
 var MAX = { ly: 5, hoa: 2.5, sinh: 2.5 };
-var state = { pass: '', lop: '', rows: [], classes: [] };
+var state = { pass: '', lop: '', rows: [], classes: [], terms: [], hk: '' };
 var timers = {};      // cho luu theo tung o
 var inflight = {};    // o dang gui len server
 var recent = {};      // o vua luu xong (tranh ban dong bo cu ghi de)
@@ -174,16 +200,38 @@ function showMsg(text, ok) {
 }
 function setStatus(text, color) { var s = $('status'); s.textContent = text; s.style.color = color || '#1e40af'; }
 
-// ===== KHOI DONG =====
-call('getInit').then(function (init) {
-  $('boot').classList.add('hidden');
-  state.classes = init.classes;
-  if (!init.classes.length) { showMsg('Không tìm thấy trang tính lớp nào (8A1...9A6) trong Google Sheet.'); return; }
-  $('lop').innerHTML = init.classes.map(function (c) {
+// ===== HOC KY =====
+var LEGACY_TERM = 'HK1 2026-2027';
+function termOf(key) { return state.terms.filter(function (t) { return t.key === key; })[0]; }
+function termLabel() { var t = termOf(state.hk); return t ? t.label : ''; }
+function termSlug() { return state.hk.replace(/\s+/g, '_'); }
+
+function fillClasses() {
+  var t = termOf(state.hk);
+  state.classes = t ? t.classes : [];
+  $('lop').innerHTML = state.classes.map(function (c) {
     return '<option value="' + esc(c.code) + '">Lớp ' + esc(c.code) + ' (' + c.count + ' học sinh)</option>';
   }).join('');
   var saved = store('pk79_lop');
-  if (saved && init.classes.some(function (c) { return c.code === saved; })) $('lop').value = saved;
+  if (saved && state.classes.some(function (c) { return c.code === saved; })) $('lop').value = saved;
+  Array.prototype.forEach.call(document.querySelectorAll('.hk-label'), function (el) { el.textContent = termLabel(); });
+}
+
+// ===== KHOI DONG =====
+call('getInit').then(function (init) {
+  $('boot').classList.add('hidden');
+  // Ma Apps Script cu chua co hoc ky -> coi nhu chi co Hoc ky I 2026-2027
+  state.terms = (init.terms && init.terms.length) ? init.terms
+    : [{ key: LEGACY_TERM, label: 'Học kỳ I - Năm học 2026-2027', classes: init.classes || [] }];
+  $('hk').innerHTML = state.terms.map(function (t) {
+    return '<option value="' + esc(t.key) + '">' + esc(t.label) + '</option>';
+  }).join('');
+  var savedHk = store('pk79_hk');
+  state.hk = (savedHk && termOf(savedHk)) ? savedHk
+    : (init.current && termOf(init.current) ? init.current : state.terms[state.terms.length - 1].key);
+  $('hk').value = state.hk;
+  fillClasses();
+  if (!state.classes.length) { showMsg('Không tìm thấy trang tính lớp nào trong Google Sheet.'); return; }
   if (init.needPassword) {
     state.pass = store('pk79_pass') || '';
     if (state.pass) return call('login', state.pass).then(startApp, function () { state.pass = ''; showLogin(); });
@@ -210,15 +258,21 @@ function startApp() {
 }
 
 $('lop').addEventListener('change', function () { loadClass(this.value); });
+$('hk').addEventListener('change', function () {
+  state.hk = this.value; store('pk79_hk', state.hk);
+  fillClasses();
+  if (state.classes.length) loadClass($('lop').value);
+});
 
 // ===== TAI LOP =====
 function loadClass(lop) {
   state.lop = lop; store('pk79_lop', lop);
+  var hk = state.hk;
   Array.prototype.forEach.call(document.querySelectorAll('.cur'), function (el) { el.textContent = lop; });
   $('rows').innerHTML = '<tr><td colspan="6" class="loading">Đang tải lớp ' + esc(lop) + '...</td></tr>';
   clearInterval(pollTimer);
-  call('getClass', lop, state.pass).then(function (rows) {
-    if (state.lop !== lop) return;
+  call('getClass', lop, state.pass, hk).then(function (rows) {
+    if (state.lop !== lop || state.hk !== hk) return;
     state.rows = rows;
     render();
     pollTimer = setInterval(poll, 4000);
@@ -232,7 +286,7 @@ function render() {
       return '<td><input type="text" class="score-input" inputmode="decimal" data-subj="' + subj + '" data-max="' + MAX[subj] +
              '" value="' + esc(fmt(s[subj])) + '"></td>';
     }).join('');
-    return '<tr data-ma="' + esc(s.ma) + '"><td>' + (i + 1) + '</td><td class="name">' + esc(s.name) + '</td>' + cells +
+    return '<tr data-ma="' + esc(s.ma) + '" data-lop="' + esc(state.lop) + '" data-hk="' + esc(state.hk) + '"><td>' + (i + 1) + '</td><td class="name">' + esc(s.name) + '</td>' + cells +
            '<td class="total">' + (s.total === '' ? '—' : fmt(s.total)) + '</td></tr>';
   }).join('');
 }
@@ -264,13 +318,15 @@ function scheduleSave(inp) {
 
 function saveCell(inp) {
   if (!isValid(inp)) return;
-  var row = inp.closest('tr'), key = cellKey(inp), lop = state.lop, value = inp.value.trim();
+  var row = inp.closest('tr'), key = cellKey(inp), value = inp.value.trim();
+  // lop + hoc ky cua chinh dong nay (khong lay lua chon hien tai, phong khi vua doi lop/hoc ky)
+  var lop = row.dataset.lop || state.lop, hk = row.dataset.hk || state.hk;
   inflight[key] = (inflight[key] || 0) + 1;
   inp.classList.add('saving');
   setStatus('Đang lưu...');
-  call('saveScore', lop, row.dataset.ma, inp.dataset.subj, value, state.pass).then(function (res) {
+  call('saveScore', lop, row.dataset.ma, inp.dataset.subj, value, state.pass, hk).then(function (res) {
     var s = findRow(res.ma);
-    if (s && lop === state.lop) { s.ly = res.ly; s.hoa = res.hoa; s.sinh = res.sinh; s.total = res.total; }
+    if (s && lop === state.lop && hk === state.hk) { s.ly = res.ly; s.hoa = res.hoa; s.sinh = res.sinh; s.total = res.total; }
     setStatus('Đã tự động lưu', '#166534');
     setTimeout(function () { if ($('status').textContent === 'Đã tự động lưu') setStatus(''); }, 2000);
   }).catch(function (e) {
@@ -331,9 +387,9 @@ var polling = false;
 function poll() {
   if (polling || document.hidden) return;
   polling = true;
-  var lop = state.lop;
-  call('getClass', lop, state.pass).then(function (rows) {
-    if (lop !== state.lop) return;
+  var lop = state.lop, hk = state.hk;
+  call('getClass', lop, state.pass, hk).then(function (rows) {
+    if (lop !== state.lop || hk !== state.hk) return;
     rows.forEach(function (s) {
       var tr = document.querySelector('tr[data-ma="' + CSS.escape(s.ma) + '"]');
       if (!tr) return;
@@ -364,7 +420,7 @@ $('export').addEventListener('click', function () {
   var aoa = [
     ['TRƯỜNG TIỂU HỌC VÀ THCS ĐA PHƯỚC'],
     ['BẢNG ĐIỂM MÔN KHOA HỌC TỰ NHIÊN - LỚP ' + lop],
-    [],
+    [termLabel()],
     ['STT', 'Họ và tên', 'Vật lý (5đ)', 'Hóa học (2,5đ)', 'Sinh học (2,5đ)', 'Tổng (10đ)']
   ];
   state.rows.forEach(function (s, i) { aoa.push([i + 1, s.name, s.ly, s.hoa, s.sinh, s.total]); });
@@ -373,19 +429,20 @@ $('export').addEventListener('click', function () {
   ws['!autofilter'] = { ref: 'A4:F' + (aoa.length) };
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Diem KHTN ' + lop);
-  XLSX.writeFile(wb, 'Bang_diem_KHTN_' + lop.toLowerCase() + '.xlsx');
+  XLSX.writeFile(wb, 'Bang_diem_KHTN_' + lop.toLowerCase() + '_' + termSlug() + '.xlsx');
 });
 
 // ===== XUAT EXCEL TAT CA LOP (MOI LOP 1 SHEET) =====
 $('export-all').addEventListener('click', function () {
   if (typeof XLSX === 'undefined') { showMsg('Chưa tải được thư viện Excel, vui lòng tải lại trang.'); return; }
   var btn = this, lops = state.classes.map(function (c) { return c.code; }), data = {}, i = 0;
+  var hk = state.hk, label = termLabel(), slug = termSlug();
   btn.disabled = true;
   function next() {
     if (i >= lops.length) return Promise.resolve();
     var lop = lops[i++];
     btn.textContent = 'Đang lấy lớp ' + lop + ' (' + i + '/' + lops.length + ')...';
-    return call('getClass', lop, state.pass).then(function (rows) { data[lop] = rows; return next(); });
+    return call('getClass', lop, state.pass, hk).then(function (rows) { data[lop] = rows; return next(); });
   }
   next().then(function () {
     var wb = XLSX.utils.book_new();
@@ -393,7 +450,7 @@ $('export-all').addEventListener('click', function () {
       var aoa = [
         ['TRƯỜNG TIỂU HỌC VÀ THCS ĐA PHƯỚC'],
         ['BẢNG ĐIỂM MÔN KHOA HỌC TỰ NHIÊN - LỚP ' + lop],
-        [],
+        [label],
         ['STT', 'Họ và tên', 'Vật lý (5đ)', 'Hóa học (2,5đ)', 'Sinh học (2,5đ)', 'Tổng (10đ)']
       ];
       data[lop].forEach(function (s, k) { aoa.push([k + 1, s.name, s.ly, s.hoa, s.sinh, s.total]); });
@@ -402,10 +459,142 @@ $('export-all').addEventListener('click', function () {
       ws['!autofilter'] = { ref: 'A4:F' + aoa.length };
       XLSX.utils.book_append_sheet(wb, ws, lop);
     });
-    XLSX.writeFile(wb, 'Bang_diem_KHTN_tat_ca_lop.xlsx');
+    XLSX.writeFile(wb, 'Bang_diem_KHTN_tat_ca_lop_' + slug + '.xlsx');
   }).catch(function (e) { showMsg(e.message); }).then(function () {
     btn.disabled = false; btn.textContent = 'Tải Excel tất cả lớp';
   });
+});
+
+// ===== THONG KE DIEM TONG (>= 5 / < 5) =====
+var TK_COLORS = { up: '#2a78d6', dn: '#eb6834', miss: '#d4d3cd' };
+var tkLast = null;
+
+function pct(a, b) { return b ? (Math.round(a / b * 1000) / 10).toString().replace('.', ',') + '%' : '—'; }
+
+function tkSum(name, list) {
+  var o = { lop: name, ss: 0, co: 0, up: 0, dn: 0, miss: 0 };
+  list.forEach(function (s) { ['ss', 'co', 'up', 'dn', 'miss'].forEach(function (k) { o[k] += s[k]; }); });
+  return o;
+}
+
+function tkChart(stats) {
+  var W = 760, rowH = 26, gap = 8, left = 52, right = 16, top = 6;
+  var maxSS = Math.max.apply(null, stats.map(function (s) { return s.ss; }).concat([1]));
+  var plotW = W - left - right, H = top + stats.length * (rowH + gap) + 22;
+  var x = function (v) { return v / maxSS * plotW; };
+  var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Biểu đồ số học sinh từ 5 trở lên, dưới 5 và chưa đủ điểm theo lớp">';
+  // luoi doc nhe
+  var step = maxSS > 30 ? 10 : 5;
+  for (var t = 0; t <= maxSS; t += step) {
+    var gx = left + x(t);
+    svg += '<line x1="' + gx + '" y1="' + top + '" x2="' + gx + '" y2="' + (H - 18) + '" stroke="#e7e6e1" stroke-width="1"/>' +
+           '<text x="' + gx + '" y="' + (H - 4) + '" font-size="11" fill="#52514e" text-anchor="middle">' + t + '</text>';
+  }
+  stats.forEach(function (s, i) {
+    var y = top + i * (rowH + gap), cx = left;
+    svg += '<text x="' + (left - 8) + '" y="' + (y + rowH / 2 + 4) + '" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="bold">' + esc(s.lop) + '</text>';
+    [['up', 'Từ 5 trở lên'], ['dn', 'Dưới 5'], ['miss', 'Chưa đủ điểm']].forEach(function (seg) {
+      var v = s[seg[0]];
+      if (!v) return;
+      var w = Math.max(x(v) - 2, 1);   // 2px khe trang giua cac doan
+      var tip = 'Lớp ' + s.lop + ' · ' + seg[1] + ': ' + v + ' em' + (seg[0] === 'miss' ? '' : ' (' + pct(v, s.co) + ' số em đủ điểm)');
+      svg += '<rect class="tk-bar" x="' + cx + '" y="' + y + '" width="' + w + '" height="' + rowH + '" rx="4" fill="' + TK_COLORS[seg[0]] + '" data-tip="' + esc(tip) + '"/>';
+      if (w >= 22) {
+        svg += '<text x="' + (cx + w / 2) + '" y="' + (y + rowH / 2 + 4) + '" font-size="12" text-anchor="middle" fill="' + (seg[0] === 'miss' ? '#0b0b0b' : '#fff') + '" pointer-events="none">' + v + '</text>';
+      }
+      cx += x(v);
+    });
+  });
+  return svg + '</svg>';
+}
+
+function tkRender(stats) {
+  var khoi = {};
+  stats.forEach(function (s) { (khoi[s.lop.charAt(0)] = khoi[s.lop.charAt(0)] || []).push(s); });
+  var sums = Object.keys(khoi).sort().map(function (k) { return tkSum('Khối ' + k, khoi[k]); });
+  var all = tkSum('TOÀN TRƯỜNG', stats);
+  var now = new Date();
+  var when = now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) + ' ' + now.toLocaleDateString('vi-VN');
+  var tile = function (k, v, s, color) {
+    return '<div class="tk-tile"><div class="k">' + (color ? '<span class="sw" style="background:' + color + '"></span>' : '') + k +
+      '</div><div class="v">' + v + '</div><div class="s">' + s + '</div></div>';
+  };
+  var html = '<p class="small">Số liệu lúc ' + esc(when) + ' - ' + esc(termLabel()) + '</p>';
+  html += '<div class="tk-tiles">' +
+    tile('Tổng số học sinh', all.ss, stats.length + ' lớp') +
+    tile('Đã đủ 3 điểm', all.co, pct(all.co, all.ss) + ' số học sinh') +
+    tile('Từ 5 trở lên', all.up, pct(all.up, all.co) + ' số em đủ điểm', TK_COLORS.up) +
+    tile('Dưới 5', all.dn, pct(all.dn, all.co) + ' số em đủ điểm', TK_COLORS.dn) +
+    '</div>';
+  html += '<div class="tk-legend"><span><i style="background:' + TK_COLORS.up + '"></i>Từ 5 trở lên</span>' +
+    '<span><i style="background:' + TK_COLORS.dn + '"></i>Dưới 5</span>' +
+    '<span><i style="background:' + TK_COLORS.miss + '"></i>Chưa đủ điểm</span></div>';
+  html += '<div class="tk-chart">' + tkChart(stats) + '<div class="tk-tip"></div></div>';
+  html += '<div class="table-wrap"><table><thead><tr><th>Lớp</th><th>Sĩ số</th><th>Đủ 3 điểm</th><th>Từ 5 trở lên</th><th>Tỉ lệ</th><th>Dưới 5</th><th>Tỉ lệ</th><th>Chưa đủ điểm</th></tr></thead><tbody>';
+  stats.concat(sums, [all]).forEach(function (s) {
+    var sum = !/^\d/.test(s.lop);
+    html += '<tr' + (sum ? ' class="sum"' : '') + '><td>' + esc(s.lop) + '</td><td>' + s.ss + '</td><td>' + s.co + '</td><td>' + s.up + '</td><td>' + pct(s.up, s.co) +
+      '</td><td>' + s.dn + '</td><td>' + pct(s.dn, s.co) + '</td><td>' + s.miss + '</td></tr>';
+  });
+  html += '</tbody></table></div>';
+  $('tk-out').innerHTML = html;
+  tkLast = { rows: stats.concat(sums, [all]), when: when, label: termLabel(), slug: termSlug() };
+  $('tk-excel').classList.remove('hidden');
+  // tooltip khi re chuot / cham vao thanh
+  var box = $('tk-out').querySelector('.tk-chart'), tip = box.querySelector('.tk-tip');
+  function show(e) {
+    var b = e.target.closest ? e.target.closest('.tk-bar') : null;
+    if (!b) { tip.style.display = 'none'; return; }
+    var r = box.getBoundingClientRect(), p = e.touches ? e.touches[0] : e;
+    tip.textContent = b.getAttribute('data-tip'); tip.style.display = 'block';
+    var lx = p.clientX - r.left + 12;
+    if (lx + tip.offsetWidth > box.clientWidth) lx = p.clientX - r.left - tip.offsetWidth - 12;
+    tip.style.left = Math.max(0, lx) + 'px'; tip.style.top = (p.clientY - r.top + 12) + 'px';
+  }
+  box.addEventListener('mousemove', show);
+  box.addEventListener('touchstart', show, { passive: true });
+  box.addEventListener('mouseleave', function () { tip.style.display = 'none'; });
+}
+
+$('tk-run').addEventListener('click', function () {
+  var btn = this, lops = state.classes.map(function (c) { return c.code; }), hk = state.hk, stats = [], i = 0;
+  btn.disabled = true;
+  function next() {
+    if (i >= lops.length) return Promise.resolve();
+    var lop = lops[i++];
+    btn.textContent = 'Đang lấy lớp ' + lop + ' (' + i + '/' + lops.length + ')...';
+    return call('getClass', lop, state.pass, hk).then(function (rows) {
+      var o = { lop: lop, ss: rows.length, co: 0, up: 0, dn: 0, miss: 0 };
+      rows.forEach(function (s) {
+        if (s.total === '' || s.total === null || s.total === undefined) { o.miss++; return; }
+        o.co++; if (Number(s.total) >= 5) o.up++; else o.dn++;
+      });
+      stats.push(o);
+      return next();
+    });
+  }
+  next().then(function () { if (hk === state.hk) tkRender(stats); })
+    .catch(function (e) { $('tk-out').innerHTML = '<div class="alert err">' + esc(e.message) + '</div>'; })
+    .then(function () { btn.disabled = false; btn.textContent = 'XEM THỐNG KÊ'; });
+});
+
+$('tk-excel').addEventListener('click', function () {
+  if (!tkLast || typeof XLSX === 'undefined') return;
+  var aoa = [
+    ['TRƯỜNG TIỂU HỌC VÀ THCS ĐA PHƯỚC'],
+    ['THỐNG KÊ ĐIỂM TỔNG MÔN KHTN (LÝ + HÓA + SINH) - ' + tkLast.label.toUpperCase()],
+    ['Số liệu lúc ' + tkLast.when + '. Chỉ tính học sinh đã đủ 3 điểm Lý, Hóa, Sinh.'],
+    [],
+    ['Lớp', 'Sĩ số', 'Đủ 3 điểm', 'Từ 5 trở lên', 'Tỉ lệ (%)', 'Dưới 5', 'Tỉ lệ (%)', 'Chưa đủ điểm']
+  ];
+  tkLast.rows.forEach(function (s) {
+    aoa.push([s.lop, s.ss, s.co, s.up, s.co ? Math.round(s.up / s.co * 1000) / 10 : '', s.dn, s.co ? Math.round(s.dn / s.co * 1000) / 10 : '', s.miss]);
+  });
+  var ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 14 }, { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 9 }, { wch: 9 }, { wch: 9 }, { wch: 12 }];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Thong ke');
+  XLSX.writeFile(wb, 'Thong_ke_KHTN_' + tkLast.slug + '.xlsx');
 });
 
 // ===== XUAT FILE NOP vnEdu =====
@@ -503,7 +692,7 @@ function vnBuild(buf, chosen, onlyClass, scores) {
       Array.prototype.forEach.call(rels.getElementsByTagNameNS('*', 'Relationship'), function (r) { targets[r.getAttribute('Id')] = r.getAttribute('Target'); });
       var jobs = [];
       Array.prototype.forEach.call(wb.getElementsByTagNameNS('*', 'sheet'), function (sh) {
-        var m = /(8a[1-7]|9a[1-6])\s*$/i.exec(sh.getAttribute('name') || '');
+        var m = /([6-9]a\d{1,2})\s*$/i.exec(sh.getAttribute('name') || '');
         if (!m) return;
         var lop = m[1].toUpperCase();
         if (onlyClass && lop !== onlyClass) return;
@@ -512,7 +701,7 @@ function vnBuild(buf, chosen, onlyClass, scores) {
         var path = target.charAt(0) === '/' ? target.slice(1) : 'xl/' + target.replace(/^\.\//, '');
         if (zip.file(path)) jobs.push({ lop: lop, path: path });
       });
-      if (!jobs.length) throw new Error('Không tìm thấy trang tính lớp nào (8A1...9A6) trong file này.');
+      if (!jobs.length) throw new Error('Không tìm thấy trang tính lớp nào (ví dụ 8A1, 9A6) trong file này.');
       var report = [];
       return Promise.all(jobs.map(function (job) {
         return zip.file(job.path).async('string').then(function (xml) {
@@ -588,13 +777,14 @@ $('vn-run').addEventListener('click', function () {
   if (typeof JSZip === 'undefined') { out.innerHTML = '<div class="alert err">Chưa tải được thư viện, vui lòng tải lại trang.</div>'; return; }
   var only = document.querySelector('input[name="vn-scope"]:checked').value === 'one' ? state.lop : '';
   var lops = only ? [only] : state.classes.map(function (c) { return c.code; });
+  var hk = state.hk;
   btn.disabled = true;
   var scores = {}, i = 0;
   function next() {
     if (i >= lops.length) return Promise.resolve();
     var lop = lops[i++];
     out.innerHTML = '<div class="note">Đang lấy điểm lớp ' + esc(lop) + ' (' + i + '/' + lops.length + ')...</div>';
-    return call('getClass', lop, state.pass).then(function (rows) {
+    return call('getClass', lop, state.pass, hk).then(function (rows) {
       scores[lop] = {};
       rows.forEach(function (s) { scores[lop][vnMa(s.ma)] = s; });
       return next();
