@@ -83,7 +83,7 @@ td.total{font-weight:bold;background:#f0fdf4;color:#b91c1c;font-size:17px}
 <div class="wrap">
   <div class="head">
     <h1>PK79 - PHẦN MỀM NHẬP ĐIỂM KHTN</h1>
-    <p>Trường Tiểu học và THCS Đa Phước | Lý 5đ - Hóa 2,5đ - Sinh 2,5đ</p>
+    <p>Trường Tiểu học và THCS Đa Phước | <span id="scale-head"></span></p>
   </div>
   <div class="panel">
     <div id="msg"></div>
@@ -98,16 +98,19 @@ td.total{font-weight:bold;background:#f0fdf4;color:#b91c1c;font-size:17px}
     <div id="app" class="hidden">
       <div class="toolbar">
         <div class="field"><label for="hk">Học kỳ</label><select id="hk"></select></div>
+        <div class="field"><label for="exam">Đợt</label><select id="exam"><option value="GK">Giữa kì</option><option value="CK">Cuối kì</option></select></div>
+        <button class="btn hidden" id="lock-gk" type="button">Khóa điểm giữa kì</button>
         <div class="field"><label for="lop">Chọn lớp</label><select id="lop"></select></div>
         <button class="btn excel" id="export" type="button">Tải Excel lớp <span class="cur"></span></button>
         <button class="btn excel" id="export-all" type="button">Tải Excel tất cả lớp</button>
       </div>
-      <div class="note"><b>Thang điểm:</b> Lý tối đa 5; Hóa tối đa 2,5; Sinh tối đa 2,5. Điểm tổng tự động tính và làm tròn.
+      <div class="note"><b>Thang điểm:</b> <span id="scale-note"></span>. Điểm tổng tự động tính và làm tròn.
         <b>Tự động lưu</b> từng ô vào Google Sheet. Điểm do giáo viên khác nhập sẽ hiện ra sau vài giây (nháy sáng màu xanh).</div>
+      <p id="lock-note" class="small" style="color:#b45309;font-weight:bold"></p>
       <p><b>Lớp <span class="cur"></span> - <span class="hk-label"></span>:</b> <span id="count">0</span> học sinh</p>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>STT</th><th>Họ và tên</th><th>Vật lý (5đ)</th><th>Hóa học (2,5đ)</th><th>Sinh học (2,5đ)</th><th>Tổng (10đ)</th></tr></thead>
+          <thead><tr><th>STT</th><th>Họ và tên</th><th id="th-ly"></th><th id="th-hoa"></th><th id="th-sinh"></th><th>Tổng (10đ)</th></tr></thead>
           <tbody id="rows"><tr><td colspan="6" class="loading">Đang tải danh sách...</td></tr></tbody>
         </table>
       </div>
@@ -146,8 +149,24 @@ td.total{font-weight:bold;background:#f0fdf4;color:#b91c1c;font-size:17px}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 var SUBJECTS = ['ly', 'hoa', 'sinh'];
-var MAX = { ly: 5, hoa: 2.5, sinh: 2.5 };
-var state = { pass: '', lop: '', rows: [], classes: [], terms: [], hk: '' };
+// Diem toi da theo khoi: khoi 8 Ly 4 / Hoa 2,5 / Sinh 3,5; khoi 9 Ly 4 / Hoa 3,5 / Sinh 2,5
+var SCALE_BY_GRADE = {
+  '8': { ly: 4, hoa: 2.5, sinh: 3.5 },
+  '9': { ly: 4, hoa: 3.5, sinh: 2.5 }
+};
+function scaleOf(lop) { return SCALE_BY_GRADE[String(lop || state.lop || '').charAt(0)] || SCALE_BY_GRADE['8']; }
+function maxFor(lop, subj) { return scaleOf(lop)[subj]; }
+function subjLabels(lop) {
+  var m = scaleOf(lop);
+  return ['Vật lý (' + fmt(m.ly) + 'đ)', 'Hóa học (' + fmt(m.hoa) + 'đ)', 'Sinh học (' + fmt(m.sinh) + 'đ)'];
+}
+function applyScale() {
+  var m = scaleOf(), L = subjLabels();
+  $('th-ly').textContent = L[0]; $('th-hoa').textContent = L[1]; $('th-sinh').textContent = L[2];
+  $('scale-head').textContent = 'Lý ' + fmt(m.ly) + 'đ - Hóa ' + fmt(m.hoa) + 'đ - Sinh ' + fmt(m.sinh) + 'đ';
+  $('scale-note').textContent = 'Lý tối đa ' + fmt(m.ly) + '; Hóa tối đa ' + fmt(m.hoa) + '; Sinh tối đa ' + fmt(m.sinh);
+}
+var state = { pass: '', lop: '', rows: [], classes: [], terms: [], hk: '', exam: 'GK', gkLocked: false };
 var timers = {};      // cho luu theo tung o
 var inflight = {};    // o dang gui len server
 var recent = {};      // o vua luu xong (tranh ban dong bo cu ghi de)
@@ -203,8 +222,14 @@ function setStatus(text, color) { var s = $('status'); s.textContent = text; s.s
 // ===== HOC KY =====
 var LEGACY_TERM = 'HK1 2026-2027';
 function termOf(key) { return state.terms.filter(function (t) { return t.key === key; })[0]; }
-function termLabel() { var t = termOf(state.hk); return t ? t.label : ''; }
-function termSlug() { return state.hk.replace(/\s+/g, '_'); }
+function examName(ex) { return (ex || state.exam) === 'CK' ? 'Cuối kì' : 'Giữa kì'; }
+function termLabel() { var t = termOf(state.hk); return t ? t.label + ' - ' + examName() : ''; }
+function termSlug() { return state.hk.replace(/\s+/g, '_') + '_' + state.exam; }
+// Diem cua dot dang chon (giua ky hoac cuoi ky) tu mot dong may chu tra ve
+function toView(s, ex) {
+  var v = (ex || state.exam) === 'CK' ? s.ck : s.gk;
+  return { ma: s.ma, name: s.name, ly: v.ly, hoa: v.hoa, sinh: v.sinh, total: v.total };
+}
 
 function fillClasses() {
   var t = termOf(state.hk);
@@ -230,6 +255,8 @@ call('getInit').then(function (init) {
   state.hk = (savedHk && termOf(savedHk)) ? savedHk
     : (init.current && termOf(init.current) ? init.current : state.terms[state.terms.length - 1].key);
   $('hk').value = state.hk;
+  state.exam = store('pk79_exam') === 'CK' ? 'CK' : 'GK';
+  $('exam').value = state.exam;
   fillClasses();
   if (!state.classes.length) { showMsg('Không tìm thấy trang tính lớp nào trong Google Sheet.'); return; }
   if (init.needPassword) {
@@ -263,30 +290,38 @@ $('hk').addEventListener('change', function () {
   fillClasses();
   if (state.classes.length) loadClass($('lop').value);
 });
+$('exam').addEventListener('change', function () {
+  state.exam = this.value; store('pk79_exam', state.exam);
+  fillClasses();
+  if (state.classes.length) loadClass($('lop').value);
+});
 
 // ===== TAI LOP =====
 function loadClass(lop) {
   state.lop = lop; store('pk79_lop', lop);
-  var hk = state.hk;
+  var hk = state.hk, ex = state.exam;
   Array.prototype.forEach.call(document.querySelectorAll('.cur'), function (el) { el.textContent = lop; });
   $('rows').innerHTML = '<tr><td colspan="6" class="loading">Đang tải lớp ' + esc(lop) + '...</td></tr>';
   clearInterval(pollTimer);
+  state.gkLocked = false; applyLock(); refreshLock();
   call('getClass', lop, state.pass, hk).then(function (rows) {
-    if (state.lop !== lop || state.hk !== hk) return;
-    state.rows = rows;
+    if (state.lop !== lop || state.hk !== hk || state.exam !== ex) return;
+    state.rows = rows.map(function (s) { return toView(s, ex); });
     render();
+    applyLock();
     pollTimer = setInterval(poll, 4000);
   }).catch(function (e) { showMsg(e.message); });
 }
 
 function render() {
+  applyScale();
   $('count').textContent = state.rows.length;
   $('rows').innerHTML = state.rows.map(function (s, i) {
     var cells = SUBJECTS.map(function (subj) {
-      return '<td><input type="text" class="score-input" inputmode="decimal" data-subj="' + subj + '" data-max="' + MAX[subj] +
+      return '<td><input type="text" class="score-input" inputmode="decimal" data-subj="' + subj + '" data-max="' + maxFor(state.lop, subj) +
              '" value="' + esc(fmt(s[subj])) + '"></td>';
     }).join('');
-    return '<tr data-ma="' + esc(s.ma) + '" data-lop="' + esc(state.lop) + '" data-hk="' + esc(state.hk) + '"><td>' + (i + 1) + '</td><td class="name">' + esc(s.name) + '</td>' + cells +
+    return '<tr data-ma="' + esc(s.ma) + '" data-lop="' + esc(state.lop) + '" data-hk="' + esc(state.hk) + '" data-exam="' + esc(state.exam) + '"><td>' + (i + 1) + '</td><td class="name">' + esc(s.name) + '</td>' + cells +
            '<td class="total">' + (s.total === '' ? '—' : fmt(s.total)) + '</td></tr>';
   }).join('');
 }
@@ -320,13 +355,13 @@ function saveCell(inp) {
   if (!isValid(inp)) return;
   var row = inp.closest('tr'), key = cellKey(inp), value = inp.value.trim();
   // lop + hoc ky cua chinh dong nay (khong lay lua chon hien tai, phong khi vua doi lop/hoc ky)
-  var lop = row.dataset.lop || state.lop, hk = row.dataset.hk || state.hk;
+  var lop = row.dataset.lop || state.lop, hk = row.dataset.hk || state.hk, ex = row.dataset.exam || state.exam;
   inflight[key] = (inflight[key] || 0) + 1;
   inp.classList.add('saving');
   setStatus('Đang lưu...');
-  call('saveScore', lop, row.dataset.ma, inp.dataset.subj, value, state.pass, hk).then(function (res) {
+  call('saveScore', lop, row.dataset.ma, inp.dataset.subj, value, state.pass, hk, ex).then(function (res) {
     var s = findRow(res.ma);
-    if (s && lop === state.lop && hk === state.hk) { s.ly = res.ly; s.hoa = res.hoa; s.sinh = res.sinh; s.total = res.total; }
+    if (s && lop === state.lop && hk === state.hk && ex === state.exam) { s.ly = res.ly; s.hoa = res.hoa; s.sinh = res.sinh; s.total = res.total; }
     setStatus('Đã tự động lưu', '#166534');
     setTimeout(function () { if ($('status').textContent === 'Đã tự động lưu') setStatus(''); }, 2000);
   }).catch(function (e) {
@@ -337,6 +372,36 @@ function saveCell(inp) {
     inflight[key]--; if (!inflight[key]) { delete inflight[key]; inp.classList.remove('saving'); }
   });
 }
+
+// ===== KHOA DIEM GIUA KY =====
+// Khi khoa: o nhap diem giua ky chi xem duoc. May chu cung tu chan luu.
+function applyLock() {
+  var lk = state.exam === 'GK' && state.gkLocked;
+  Array.prototype.forEach.call(document.querySelectorAll('.score-input'), function (i) { i.readOnly = lk; });
+  var b = $('lock-gk');
+  b.classList.toggle('hidden', state.exam !== 'GK');
+  b.textContent = state.gkLocked ? 'Mở khóa điểm giữa kì' : 'Khóa điểm giữa kì';
+  b.style.background = state.gkLocked ? '#b45309' : '';
+  $('lock-note').textContent = lk ? 'Điểm giữa kì học kỳ này ĐANG KHÓA: không sửa được. Bấm "Mở khóa điểm giữa kì" để sửa.' : '';
+}
+
+function refreshLock() {
+  var hk = state.hk;
+  return call('getLock', hk, state.pass).then(function (locked) {
+    if (hk !== state.hk) return;
+    state.gkLocked = !!locked; applyLock();
+  }).catch(function () { /* mang chap chon: thu lai lan sau */ });
+}
+
+$('lock-gk').addEventListener('click', function () {
+  var want = !state.gkLocked, hk = state.hk, btn = this;
+  btn.disabled = true;
+  call('setGkLock', hk, want, state.pass).then(function (locked) {
+    if (hk !== state.hk) return;
+    state.gkLocked = !!locked; applyLock();
+    showMsg(locked ? 'Đã khóa điểm giữa kì ' + termOf(hk).label + '.' : 'Đã mở khóa điểm giữa kì ' + termOf(hk).label + '.', true);
+  }).catch(function (e) { showMsg(e.message); }).then(function () { btn.disabled = false; });
+});
 
 function findRow(ma) {
   for (var i = 0; i < state.rows.length; i++) if (state.rows[i].ma === ma) return state.rows[i];
@@ -387,10 +452,11 @@ var polling = false;
 function poll() {
   if (polling || document.hidden) return;
   polling = true;
-  var lop = state.lop, hk = state.hk;
+  refreshLock();   // giao vien khac khoa/mo khoa thi cap nhat ngay
+  var lop = state.lop, hk = state.hk, ex = state.exam;
   call('getClass', lop, state.pass, hk).then(function (rows) {
-    if (lop !== state.lop || hk !== state.hk) return;
-    rows.forEach(function (s) {
+    if (lop !== state.lop || hk !== state.hk || ex !== state.exam) return;
+    rows.map(function (s) { return toView(s, ex); }).forEach(function (s) {
       var tr = document.querySelector('tr[data-ma="' + CSS.escape(s.ma) + '"]');
       if (!tr) return;
       var changed = false;
@@ -421,7 +487,7 @@ $('export').addEventListener('click', function () {
     ['TRƯỜNG TIỂU HỌC VÀ THCS ĐA PHƯỚC'],
     ['BẢNG ĐIỂM MÔN KHOA HỌC TỰ NHIÊN - LỚP ' + lop],
     [termLabel()],
-    ['STT', 'Họ và tên', 'Vật lý (5đ)', 'Hóa học (2,5đ)', 'Sinh học (2,5đ)', 'Tổng (10đ)']
+    ['STT', 'Họ và tên'].concat(subjLabels(lop), ['Tổng (10đ)'])
   ];
   state.rows.forEach(function (s, i) { aoa.push([i + 1, s.name, s.ly, s.hoa, s.sinh, s.total]); });
   var ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -436,13 +502,16 @@ $('export').addEventListener('click', function () {
 $('export-all').addEventListener('click', function () {
   if (typeof XLSX === 'undefined') { showMsg('Chưa tải được thư viện Excel, vui lòng tải lại trang.'); return; }
   var btn = this, lops = state.classes.map(function (c) { return c.code; }), data = {}, i = 0;
-  var hk = state.hk, label = termLabel(), slug = termSlug();
+  var hk = state.hk, ex = state.exam, label = termLabel(), slug = termSlug();
   btn.disabled = true;
   function next() {
     if (i >= lops.length) return Promise.resolve();
     var lop = lops[i++];
     btn.textContent = 'Đang lấy lớp ' + lop + ' (' + i + '/' + lops.length + ')...';
-    return call('getClass', lop, state.pass, hk).then(function (rows) { data[lop] = rows; return next(); });
+    return call('getClass', lop, state.pass, hk).then(function (rows) {
+      data[lop] = rows.map(function (s) { return toView(s, ex); });
+      return next();
+    });
   }
   next().then(function () {
     var wb = XLSX.utils.book_new();
@@ -451,7 +520,7 @@ $('export-all').addEventListener('click', function () {
         ['TRƯỜNG TIỂU HỌC VÀ THCS ĐA PHƯỚC'],
         ['BẢNG ĐIỂM MÔN KHOA HỌC TỰ NHIÊN - LỚP ' + lop],
         [label],
-        ['STT', 'Họ và tên', 'Vật lý (5đ)', 'Hóa học (2,5đ)', 'Sinh học (2,5đ)', 'Tổng (10đ)']
+        ['STT', 'Họ và tên'].concat(subjLabels(lop), ['Tổng (10đ)'])
       ];
       data[lop].forEach(function (s, k) { aoa.push([k + 1, s.name, s.ly, s.hoa, s.sinh, s.total]); });
       var ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -557,13 +626,14 @@ function tkRender(stats) {
 }
 
 $('tk-run').addEventListener('click', function () {
-  var btn = this, lops = state.classes.map(function (c) { return c.code; }), hk = state.hk, stats = [], i = 0;
+  var btn = this, lops = state.classes.map(function (c) { return c.code; }), hk = state.hk, ex = state.exam, stats = [], i = 0;
   btn.disabled = true;
   function next() {
     if (i >= lops.length) return Promise.resolve();
     var lop = lops[i++];
     btn.textContent = 'Đang lấy lớp ' + lop + ' (' + i + '/' + lops.length + ')...';
     return call('getClass', lop, state.pass, hk).then(function (rows) {
+      rows = rows.map(function (s) { return toView(s, ex); });
       var o = { lop: lop, ss: rows.length, co: 0, up: 0, dn: 0, miss: 0 };
       rows.forEach(function (s) {
         if (s.total === '' || s.total === null || s.total === undefined) { o.miss++; return; }
@@ -573,7 +643,7 @@ $('tk-run').addEventListener('click', function () {
       return next();
     });
   }
-  next().then(function () { if (hk === state.hk) tkRender(stats); })
+  next().then(function () { if (hk === state.hk && ex === state.exam) tkRender(stats); })
     .catch(function (e) { $('tk-out').innerHTML = '<div class="alert err">' + esc(e.message) + '</div>'; })
     .then(function () { btn.disabled = false; btn.textContent = 'XEM THỐNG KÊ'; });
 });
@@ -770,7 +840,8 @@ $('vn-run').addEventListener('click', function () {
   var chosen = Array.prototype.filter.call(document.querySelectorAll('.vn-col'), function (b) { return b.querySelector('.vn-check').checked; })
     .map(function (b) {
       var key = b.dataset.key;
-      return { key: key, label: VN_COLS.filter(function (c) { return c.key === key; })[0].label, src: 'total' };
+      return { key: key, label: VN_COLS.filter(function (c) { return c.key === key; })[0].label,
+               src: key === 'CK' ? 'ckTotal' : 'gkTotal' };
     });
   if (!file) { out.innerHTML = '<div class="alert err">Chưa chọn file sổ điểm tải từ vnEdu.</div>'; return; }
   if (!chosen.length) { out.innerHTML = '<div class="alert err">Chưa tích cột nào để điền điểm.</div>'; return; }
@@ -786,7 +857,7 @@ $('vn-run').addEventListener('click', function () {
     out.innerHTML = '<div class="note">Đang lấy điểm lớp ' + esc(lop) + ' (' + i + '/' + lops.length + ')...</div>';
     return call('getClass', lop, state.pass, hk).then(function (rows) {
       scores[lop] = {};
-      rows.forEach(function (s) { scores[lop][vnMa(s.ma)] = s; });
+      rows.forEach(function (s) { scores[lop][vnMa(s.ma)] = { gkTotal: s.gk.total, ckTotal: s.ck.total }; });
       return next();
     });
   }
