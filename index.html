@@ -106,6 +106,12 @@ td.total{font-weight:bold;background:#f0fdf4;color:#b91c1c;font-size:17px}
       </div>
       <div class="note"><b>Thang điểm:</b> <span id="scale-note"></span>. Điểm tổng tự động tính và làm tròn.
         <b>Tự động lưu</b> từng ô vào Google Sheet. Điểm do giáo viên khác nhập sẽ hiện ra sau vài giây (nháy sáng màu xanh).</div>
+      <form id="lock-box" class="toolbar hidden" style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:10px">
+        <div class="field"><label for="lock-pass"><span id="lock-box-title">Khóa điểm giữa kì</span> - nhập mật khẩu khóa (chỉ Thầy quản lý)</label>
+          <input id="lock-pass" class="pass" type="password" autocomplete="off"></div>
+        <button class="btn" id="lock-ok" type="submit">Xác nhận</button>
+        <button class="btn" id="lock-cancel" type="button" style="background:#64748b">Hủy</button>
+      </form>
       <p id="lock-note" class="small" style="color:#b45309;font-weight:bold"></p>
       <p><b>Lớp <span class="cur"></span> - <span class="hk-label"></span>:</b> <span id="count">0</span> học sinh</p>
       <div class="table-wrap">
@@ -388,6 +394,7 @@ function applyLock() {
   Array.prototype.forEach.call(document.querySelectorAll('.score-input'), function (i) { i.readOnly = lk; });
   var b = $('lock-gk');
   b.classList.toggle('hidden', state.exam !== 'GK' || !!state.oldServer);
+  if (state.exam !== 'GK' || state.oldServer) $('lock-box').classList.add('hidden');
   b.textContent = state.gkLocked ? 'Mở khóa điểm giữa kì' : 'Khóa điểm giữa kì';
   b.style.background = state.gkLocked ? '#b45309' : '';
   $('lock-note').textContent = ckBlocked()
@@ -403,14 +410,37 @@ function refreshLock() {
   }).catch(function () { /* mang chap chon: thu lai lan sau */ });
 }
 
-$('lock-gk').addEventListener('click', function () {
-  var want = !state.gkLocked, hk = state.hk, btn = this;
+// Chi Thay quan ly (co mat khau khoa) moi khoa / mo khoa duoc; may chu kiem tra mat khau.
+function setLock(want, admin) {
+  var hk = state.hk, btn = $('lock-ok');
   btn.disabled = true;
-  call('setGkLock', hk, want, state.pass).then(function (locked) {
+  return call('setGkLock', hk, want, state.pass, admin).then(function (locked) {
+    store('pk79_admin', admin);
+    $('lock-box').classList.add('hidden'); $('lock-pass').value = '';
     if (hk !== state.hk) return;
     state.gkLocked = !!locked; applyLock();
     showMsg(locked ? 'Đã khóa điểm giữa kì ' + termOf(hk).label + '.' : 'Đã mở khóa điểm giữa kì ' + termOf(hk).label + '.', true);
-  }).catch(function (e) { showMsg(e.message); }).then(function () { btn.disabled = false; });
+  }).catch(function (e) {
+    store('pk79_admin', '');
+    $('lock-box').classList.remove('hidden'); $('lock-pass').focus();
+    showMsg(e.message);
+  }).then(function () { btn.disabled = false; });
+}
+
+$('lock-gk').addEventListener('click', function () {
+  var want = !state.gkLocked, saved = store('pk79_admin');
+  $('lock-box-title').textContent = want ? 'Khóa điểm giữa kì' : 'Mở khóa điểm giữa kì';
+  if (saved) { setLock(want, saved); return; }   // da nhap dung mat khau trong phien nay
+  $('lock-box').classList.remove('hidden'); $('lock-pass').focus();
+});
+$('lock-box').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var p = $('lock-pass').value;
+  if (!p) { $('lock-pass').focus(); return; }
+  setLock(!state.gkLocked, p);
+});
+$('lock-cancel').addEventListener('click', function () {
+  $('lock-box').classList.add('hidden'); $('lock-pass').value = '';
 });
 
 function findRow(ma) {
