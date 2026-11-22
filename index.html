@@ -178,7 +178,7 @@ function store(k, v) { try { if (v === undefined) return sessionStorage.getItem(
 // ===== LINK APPS SCRIPT =====
 // Khi dat trang nay tren GitHub Pages: dan link "URL ung dung web" (.../exec) vao day.
 // Khi chay ngay trong Apps Script thi khong can (de nguyen cung duoc).
-var API_URL = 'https://script.google.com/macros/s/AKfycbwmpi5kLpplkrl3XD3i2Tw_cxfpc7JPQUbybYcoWkxagzmaxBSVdlT3DazHZEprR9cx/exec';
+var API_URL = 'https://script.google.com/macros/s/DAN_MA_TRIEN_KHAI_VAO_DAY/exec';
 
 var IN_APPS_SCRIPT = typeof google !== 'undefined' && google.script && google.script.run;
 
@@ -226,8 +226,12 @@ function examName(ex) { return (ex || state.exam) === 'CK' ? 'Cuối kì' : 'Gi�
 function termLabel() { var t = termOf(state.hk); return t ? t.label + ' - ' + examName() : ''; }
 function termSlug() { return state.hk.replace(/\s+/g, '_') + '_' + state.exam; }
 // Diem cua dot dang chon (giua ky hoac cuoi ky) tu mot dong may chu tra ve
+// Code.gs cu chua co gk/ck: diem o ngoai (ly/hoa/sinh/total) la giua ky, cuoi ky de trong
+var EMPTY_SCORES = { ly: '', hoa: '', sinh: '', total: '' };
+function gkOf(s) { return s.gk || s; }
+function ckOf(s) { return s.ck || EMPTY_SCORES; }
 function toView(s, ex) {
-  var v = (ex || state.exam) === 'CK' ? s.ck : s.gk;
+  var v = (ex || state.exam) === 'CK' ? ckOf(s) : gkOf(s);
   return { ma: s.ma, name: s.name, ly: v.ly, hoa: v.hoa, sinh: v.sinh, total: v.total };
 }
 
@@ -306,6 +310,8 @@ function loadClass(lop) {
   state.gkLocked = false; applyLock(); refreshLock();
   call('getClass', lop, state.pass, hk).then(function (rows) {
     if (state.lop !== lop || state.hk !== hk || state.exam !== ex) return;
+    // Code.gs cu khong tra ve gk/ck -> chua nhap duoc cuoi ky (se ghi nham vao cot giua ky)
+    state.oldServer = rows.length > 0 && !rows[0].gk;
     state.rows = rows.map(function (s) { return toView(s, ex); });
     render();
     applyLock();
@@ -354,6 +360,7 @@ function scheduleSave(inp) {
 function saveCell(inp) {
   if (!isValid(inp)) return;
   var row = inp.closest('tr'), key = cellKey(inp), value = inp.value.trim();
+  if ((row.dataset.exam || state.exam) === 'CK' && state.oldServer) return;   // khong ghi nham vao cot giua ky
   // lop + hoc ky cua chinh dong nay (khong lay lua chon hien tai, phong khi vua doi lop/hoc ky)
   var lop = row.dataset.lop || state.lop, hk = row.dataset.hk || state.hk, ex = row.dataset.exam || state.exam;
   inflight[key] = (inflight[key] || 0) + 1;
@@ -375,14 +382,17 @@ function saveCell(inp) {
 
 // ===== KHOA DIEM GIUA KY =====
 // Khi khoa: o nhap diem giua ky chi xem duoc. May chu cung tu chan luu.
+function ckBlocked() { return state.exam === 'CK' && state.oldServer; }
 function applyLock() {
-  var lk = state.exam === 'GK' && state.gkLocked;
+  var lk = (state.exam === 'GK' && state.gkLocked) || ckBlocked();
   Array.prototype.forEach.call(document.querySelectorAll('.score-input'), function (i) { i.readOnly = lk; });
   var b = $('lock-gk');
-  b.classList.toggle('hidden', state.exam !== 'GK');
+  b.classList.toggle('hidden', state.exam !== 'GK' || !!state.oldServer);
   b.textContent = state.gkLocked ? 'Mở khóa điểm giữa kì' : 'Khóa điểm giữa kì';
   b.style.background = state.gkLocked ? '#b45309' : '';
-  $('lock-note').textContent = lk ? 'Điểm giữa kì học kỳ này ĐANG KHÓA: không sửa được. Bấm "Mở khóa điểm giữa kì" để sửa.' : '';
+  $('lock-note').textContent = ckBlocked()
+    ? 'Chưa nhập được điểm cuối kì: Apps Script chưa cập nhật Code.gs mới.'
+    : (lk ? 'Điểm giữa kì học kỳ này ĐANG KHÓA: không sửa được. Bấm "Mở khóa điểm giữa kì" để sửa.' : '');
 }
 
 function refreshLock() {
@@ -857,7 +867,7 @@ $('vn-run').addEventListener('click', function () {
     out.innerHTML = '<div class="note">Đang lấy điểm lớp ' + esc(lop) + ' (' + i + '/' + lops.length + ')...</div>';
     return call('getClass', lop, state.pass, hk).then(function (rows) {
       scores[lop] = {};
-      rows.forEach(function (s) { scores[lop][vnMa(s.ma)] = { gkTotal: s.gk.total, ckTotal: s.ck.total }; });
+      rows.forEach(function (s) { scores[lop][vnMa(s.ma)] = { gkTotal: gkOf(s).total, ckTotal: ckOf(s).total }; });
       return next();
     });
   }
