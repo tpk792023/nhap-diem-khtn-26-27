@@ -107,7 +107,7 @@ td.total{font-weight:bold;background:#f0fdf4;color:#b91c1c;font-size:17px}
       <div class="note"><b>Thang điểm:</b> <span id="scale-note"></span>. Điểm tổng tự động tính và làm tròn.
         <b>Tự động lưu</b> từng ô vào Google Sheet. Điểm do giáo viên khác nhập sẽ hiện ra sau vài giây (nháy sáng màu xanh).</div>
       <form id="lock-box" class="toolbar hidden" style="background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:10px">
-        <div class="field"><label for="lock-pass"><span id="lock-box-title">Mở khóa điểm giữa kì</span> - nhập mật khẩu (chỉ Thầy quản lý)</label>
+        <div class="field"><label for="lock-pass"><span id="lock-box-title">Khóa điểm giữa kì</span> - nhập mật khẩu quản lý</label>
           <input id="lock-pass" class="pass" type="password" autocomplete="off"></div>
         <button class="btn" id="lock-ok" type="submit">Xác nhận</button>
         <button class="btn" id="lock-cancel" type="button" style="background:#64748b">Hủy</button>
@@ -172,7 +172,7 @@ function applyScale() {
   $('scale-head').textContent = 'Lý ' + fmt(m.ly) + 'đ - Hóa ' + fmt(m.hoa) + 'đ - Sinh ' + fmt(m.sinh) + 'đ';
   $('scale-note').textContent = 'Lý tối đa ' + fmt(m.ly) + '; Hóa tối đa ' + fmt(m.hoa) + '; Sinh tối đa ' + fmt(m.sinh);
 }
-var state = { pass: '', lop: '', rows: [], classes: [], terms: [], hk: '', exam: 'GK', gkLocked: false };
+var state = { pass: '', lop: '', rows: [], classes: [], terms: [], hk: '', exam: 'GK', locked: false };
 var timers = {};      // cho luu theo tung o
 var inflight = {};    // o dang gui len server
 var recent = {};      // o vua luu xong (tranh ban dong bo cu ghi de)
@@ -313,7 +313,7 @@ function loadClass(lop) {
   Array.prototype.forEach.call(document.querySelectorAll('.cur'), function (el) { el.textContent = lop; });
   $('rows').innerHTML = '<tr><td colspan="6" class="loading">Đang tải lớp ' + esc(lop) + '...</td></tr>';
   clearInterval(pollTimer);
-  state.gkLocked = false; applyLock(); refreshLock();
+  state.locked = false; $('lock-box').classList.add('hidden'); applyLock(); refreshLock();
   call('getClass', lop, state.pass, hk).then(function (rows) {
     if (state.lop !== lop || state.hk !== hk || state.exam !== ex) return;
     // Code.gs cu khong tra ve gk/ck -> chua nhap duoc cuoi ky (se ghi nham vao cot giua ky)
@@ -386,61 +386,58 @@ function saveCell(inp) {
   });
 }
 
-// ===== KHOA DIEM GIUA KY =====
-// Khi khoa: o nhap diem giua ky chi xem duoc. May chu cung tu chan luu.
+// ===== KHOA DIEM (giua ky / cuoi ky, theo hoc ky) =====
+// Chi Thay quan ly co mat khau moi khoa / mo khoa. Khi khoa: o diem chi xem duoc, may chu cung chan luu.
 function ckBlocked() { return state.exam === 'CK' && state.oldServer; }
 function applyLock() {
-  var lk = (state.exam === 'GK' && state.gkLocked) || ckBlocked();
+  var lk = state.locked || ckBlocked(), dot = examName().toLowerCase();
   Array.prototype.forEach.call(document.querySelectorAll('.score-input'), function (i) { i.readOnly = lk; });
   var b = $('lock-gk');
-  b.classList.toggle('hidden', state.exam !== 'GK' || !!state.oldServer);
-  if (state.exam !== 'GK' || state.oldServer) $('lock-box').classList.add('hidden');
-  b.textContent = state.gkLocked ? 'Mở khóa điểm giữa kì' : 'Khóa điểm giữa kì';
-  b.style.background = state.gkLocked ? '#b45309' : '';
+  b.classList.toggle('hidden', !!state.oldServer);
+  if (state.oldServer) $('lock-box').classList.add('hidden');
+  b.textContent = (state.locked ? 'Mở khóa điểm ' : 'Khóa điểm ') + dot;
+  b.style.background = state.locked ? '#b45309' : '';
   $('lock-note').textContent = ckBlocked()
     ? 'Chưa nhập được điểm cuối kì: Apps Script chưa cập nhật Code.gs mới.'
-    : (lk ? 'Điểm giữa kì học kỳ này ĐANG KHÓA: không sửa được. Bấm "Mở khóa điểm giữa kì" để sửa.' : '');
+    : (state.locked ? 'Điểm ' + dot + ' học kỳ này ĐANG KHÓA: chỉ xem, không sửa được. Thầy quản lý mở khóa thì mới sửa.' : '');
 }
 
 function refreshLock() {
-  var hk = state.hk;
-  return call('getLock', hk, state.pass).then(function (locked) {
-    if (hk !== state.hk) return;
-    state.gkLocked = !!locked; applyLock();
+  var hk = state.hk, ex = state.exam;
+  return call('getLock', hk, state.pass, ex).then(function (locked) {
+    if (hk !== state.hk || ex !== state.exam) return;
+    state.locked = !!locked; applyLock();
   }).catch(function () { /* mang chap chon: thu lai lan sau */ });
 }
 
-// Khoa: bam la khoa ngay. Mo khoa: can mat khau khoa (chi Thay quan ly), may chu kiem tra.
 function setLock(want, admin) {
-  var hk = state.hk, btn = $('lock-ok');
+  var hk = state.hk, ex = state.exam, btn = $('lock-ok');
   btn.disabled = true;
-  return call('setGkLock', hk, want, state.pass, admin).then(function (locked) {
-    if (admin) store('pk79_admin', admin);
+  return call('setGkLock', hk, want, state.pass, admin, ex).then(function (locked) {
+    store('pk79_admin', admin);
     $('lock-box').classList.add('hidden'); $('lock-pass').value = '';
-    if (hk !== state.hk) return;
-    state.gkLocked = !!locked; applyLock();
-    showMsg(locked ? 'Đã khóa điểm giữa kì ' + termOf(hk).label + '.' : 'Đã mở khóa điểm giữa kì ' + termOf(hk).label + '.', true);
+    var what = 'điểm ' + examName(ex).toLowerCase() + ' ' + termOf(hk).label;
+    showMsg((locked ? 'Đã khóa ' : 'Đã mở khóa ') + what + '.', true);
+    if (hk !== state.hk || ex !== state.exam) return;
+    state.locked = !!locked; applyLock();
   }).catch(function (e) {
-    if (!want) {   // mo khoa sai mat khau: hoi lai mat khau
-      store('pk79_admin', '');
-      $('lock-box').classList.remove('hidden'); $('lock-pass').focus();
-    }
+    store('pk79_admin', '');   // sai mat khau / loi: hoi lai mat khau
+    $('lock-box').classList.remove('hidden'); $('lock-pass').focus();
     showMsg(e.message);
   }).then(function () { btn.disabled = false; });
 }
 
 $('lock-gk').addEventListener('click', function () {
-  var want = !state.gkLocked, saved = store('pk79_admin');
-  if (want) { setLock(true, ''); return; }       // khoa: khong can mat khau
-  $('lock-box-title').textContent = 'Mở khóa điểm giữa kì';
-  if (saved) { setLock(false, saved); return; }  // da nhap dung mat khau trong phien nay
+  var want = !state.locked, saved = store('pk79_admin');
+  $('lock-box-title').textContent = (want ? 'Khóa điểm ' : 'Mở khóa điểm ') + examName().toLowerCase();
+  if (saved) { setLock(want, saved); return; }   // da nhap dung mat khau trong phien nay
   $('lock-box').classList.remove('hidden'); $('lock-pass').focus();
 });
 $('lock-box').addEventListener('submit', function (e) {
   e.preventDefault();
   var p = $('lock-pass').value;
   if (!p) { $('lock-pass').focus(); return; }
-  setLock(!state.gkLocked, p);
+  setLock(!state.locked, p);
 });
 $('lock-cancel').addEventListener('click', function () {
   $('lock-box').classList.add('hidden'); $('lock-pass').value = '';
